@@ -6,6 +6,9 @@
 .Rhistory
 .RData
 
+# MacOs files
+.DS_Store
+
 # Figures, plots, results
 Res_indmodel/
 
