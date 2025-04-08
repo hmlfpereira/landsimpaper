@@ -1,0 +1,11 @@
+# RStudio project files
+.Rproj.user/
+*.Rproj
+
+# R history files
+.Rhistory
+.RData
+
+# Figures, plots, results
+Res_indmodel/
+

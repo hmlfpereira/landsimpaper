@@ -1,0 +1,33 @@
+---
+title: "Landsim paper"
+output: html_notebook
+---
+
+I had to create a file on ~/.R/Makevars to setup the following compiler flags
+CXXFLAGS = -std=c++03
+CXX11 = clang++
+CXX11FLAGS = -std=c++03
+
+```{r}
+remotes::install_github("anaceiahasse/PopIn")
+library(PopIn)
+```
+
+Now try an example
+```{r}
+indmodel()
+```
+
+Now try code for paper.
+
+```{r}
+indmodel(param = list(
+  #    n_rep = 2, hab_aff = c(0.0, 1.0), n_steps = 200, init_population = 10,
+  #    hr_size = 1, birth_rate = 2.0, breeding_age = 1, survival = 0.4, 
+  #    distance_weight = 0.001, dispersal_distance = 5.0, dispersal_mode = 2,
+  #    sink_avoidance = 0.1, neigh_avoidance = 1.0, sink_mortality = 0.9, 
+  #    plotYN = "TRUE", writeYN = "TRUE", 
+  #    dir_name = "Res_mylist", file_name = "indmodel_rep"))
+
+```
+
