@@ -1,0 +1,73 @@
+---
+title: "Landsim analysis for the Pereira et al. (2025) Adv Eco Res"
+output: html_notebook
+---
+Remove old PopIn
+
+```{r}
+#remove.packages("PopIn")
+#.libPaths()
+```
+
+
+Install and load the library PopIn.
+
+```{r}
+#C++ code in PopIn was pre c++11 and followed the c++98 standard
+#Have now updated it to compile with features that are deprecated in clang
+
+#remotes::install_github("anaceiahasse/PopIn", force=TRUE)
+#remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", force=TRUE,
+#                       INSTALL_opts = c("--no-multiarch", "--with-keep.source","--no-byte-compile"))
+remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", force=TRUE)
+
+library(PopIn)
+Sys.getpid()
+source("FractalLandscape.R")
+```
+
+Now try an example.
+
+```{r}
+indmodel()
+```
+
+Small home-range size
+
+```{r}
+land2 = generate_fractal_landscape(0.2, .01,20)
+image(land2)
+indmodel(land_r=land2, param = list(
+  n_rep = 2, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
+  hr_size = 1, birth_rate = 2.0, breeding_age = 1, survival = 0.4, 
+  distance_weight = 0.001, dispersal_distance = 0, dispersal_mode = 0,
+  sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
+  plotYN = "TRUE", writeYN = "TRUE", 
+  dir_name = "Res_indmodel", file_name = "indmodel_rep"))
+```
+
+Large home-range size fragmented.
+
+```{r}
+land2 = generate_fractal_landscape(0.2, .01,160)
+image(land2, asp=1)
+indmodel(land_r=land2, param = list(
+  n_rep = 2, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
+  hr_size = 64, birth_rate = 2.0, breeding_age = 1, survival = 0.4, 
+  distance_weight = 0.001, dispersal_distance = 0, dispersal_mode =0 ,
+  sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
+  plotYN = "TRUE", writeYN = "TRUE", 
+  dir_name = "Res_indmodel", file_name = "indmodel_rep"))
+```
+```{r}
+land2 = generate_fractal_landscape(0.2, .99,160)
+image(land2, asp=1)
+indmodel(land_r=land2, param = list(
+  n_rep = 2, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
+  hr_size = 64, birth_rate = 2.0, breeding_age = 1, survival = 0.4, 
+  distance_weight = 0.001, dispersal_distance = 0, dispersal_mode =0 ,
+  sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
+  plotYN = "TRUE", writeYN = "TRUE", 
+  dir_name = "Res_indmodel", file_name = "indmodel_rep"))
+```
+

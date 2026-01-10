@@ -48,5 +48,5 @@ generate_fractal_landscape <- function(pIn, H, k = 100, n = NULL) {
   ConvertToLandscape(fractal, p)
 }
 
-land <- generate_fractal_landscape (.1,.01, 160)
-image(land)
+#land <- generate_fractal_landscape (.1,.01, 160)
+#image(land)
