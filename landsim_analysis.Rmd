@@ -1,40 +1,323 @@
 ---
-title: "Landsim analysis for the Pereira et al. (2025) Adv Eco Res"
+title: "Landsim model analysis "
 output: html_notebook
 ---
-Remove old PopIn
+
+# About
+
+-   Version: 1.1
+-   Date: 2026-01-22
+-   Author: Henrique M. Pereira
+-   Paper: Pereira et al. (2025) Adv Eco Res
+
+# Initialization
+
+## Load needed packages
+
+Remove old version of PopIn package (if needed).
 
 ```{r}
-remove.packages("PopIn")
-#.libPaths()
+#remove.packages("PopIn")
 ```
 
-
-Install and load the library PopIn.
+Install the package PopIn.
 
 ```{r}
 #C++ code in PopIn was pre c++11 and followed the c++98 standard
 #Have now updated it to compile with features that are deprecated in clang
 
-remotes::install_github("anaceiahasse/PopIn", force=TRUE)
-#remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", force=TRUE,
-#                       INSTALL_opts = c("--no-multiarch", "--with-keep.source","--no-byte-compile"))
-remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", force=TRUE)
+remotes::install_github("anaceiahasse/PopIn", ref="paper_resubmission")
+
+
+#instal from local repo
+#remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", force=TRUE)
+
+#install from local repo in debug mode
+#remotes::install_local("/Users/henrique/Documents/Programming/labprojects/PopIn", #                       force=TRUE,
+#                       INSTALL_opts = c("--no-multiarch", 
+#                       "--with-keep.source","--no-byte-compile"))
+
+packageVersion("PopIn")
 ```
-Load the library PopIn and the fractal landscape generating function..
+
+Load the package PopIn and the fractal landscape generating function..
 
 ```{r}
 library(PopIn)
 source("FractalLandscape.R")
 
 ```
-Now try an example. 
+
+Now try an example.
 
 ```{r}
 indmodel()
 ```
 
-Small home-range size
+## Function to import model output
+
+```{r}
+# functions to read the model outputs that are based on Mathematica code (based on ChatGPT)
+# originally the model output was Mathematica code
+
+# -------------------------------
+# Import Mathematica assignments to R
+# -------------------------------
+
+import_mathematica <- function(file) {
+  lines <- readLines(file)
+  full_text <- paste(lines, collapse = "\n")
+  assignments <- unlist(strsplit(full_text, ";"))
+  assignments <- trimws(assignments)
+  assignments <- assignments[nzchar(assignments)]
+  
+  result <- list()
+  
+  parse_value <- function(value_str) {
+
+  value_str <- trimws(value_str)
+
+  # ---- CASE 1: rule-based assignment (simoptions) ----
+  if (grepl("->", value_str)) {
+
+    # remove ONLY the outer braces
+    value_str <- sub("^\\{", "", value_str)
+    value_str <- sub("\\}$", "", value_str)
+
+    rules <- strsplit(value_str, ",")[[1]]
+    lst <- list()
+
+    for (r in rules) {
+      kv <- strsplit(trimws(r), "->")[[1]]
+      key <- trimws(kv[1])
+      val <- trimws(kv[2])
+
+      # numeric if possible, otherwise keep as character
+      num <- suppressWarnings(as.numeric(val))
+      lst[[key]] <- if (!is.na(num)) num else val
+    }
+
+    return(lst)
+  }
+
+  # ---- CASE 2: everything else (UNCHANGED logic) ----
+  value_str <- gsub("\\{", "list(", value_str)
+  value_str <- gsub("\\}", ")", value_str)
+  value_str <- gsub("\\bTrue\\b", "TRUE", value_str)
+  value_str <- gsub("\\bFalse\\b", "FALSE", value_str)
+
+  obj <- tryCatch(eval(parse(text = value_str)), error = function(e) NULL)
+
+  list_to_array <- function(x) {
+    if (!is.list(x)) return(x)
+    if (all(sapply(x, function(y) !is.list(y)))) {
+      return(unlist(x))
+    } else {
+      x_conv <- lapply(x, list_to_array)
+      if (all(sapply(x_conv, is.atomic)) &&
+          length(unique(sapply(x_conv, length))) == 1) {
+        return(do.call(rbind, x_conv))
+      }
+      return(x_conv)
+    }
+  }
+
+  list_to_array(obj)
+}
+
+
+  for (assign in assignments) {
+    if (!grepl("=", assign)) next
+    
+    # Detect sublist assignment: name[[i]] = value
+    sublist_match <- regmatches(assign, regexec("^([a-zA-Z0-9_]+)\\[\\[([0-9]+)\\]\\]\\s*=\\s*(.*)$", assign))[[1]]
+    
+    if (length(sublist_match) > 0) {
+      name <- sublist_match[2]
+      index <- as.integer(sublist_match[3])
+      value_str <- sublist_match[4]
+      value <- parse_value(value_str)
+      if (is.null(result[[name]])) result[[name]] <- vector("list", max(index,1))
+      length(result[[name]]) <- max(length(result[[name]]), index)
+      result[[name]][[index]] <- value
+    } else {
+      # Normal assignment
+      parts <- strsplit(assign, "=")[[1]]
+      name <- trimws(parts[1])
+      value <- paste(parts[-1], collapse = "=")
+      value <- trimws(value)
+      result[[name]] <- parse_value(value)
+    }
+  }
+  
+  # Convert popsize (or any similar list of scalars) to vector
+  if (!is.null(result$popsize)) {
+    if (all(sapply(result$popsize, function(x) length(x) == 1))) {
+      result$popsize <- unlist(result$popsize)
+    }
+  }
+  
+  return(result)
+}
+
+
+```
+
+## Functions to plot home-ranges on landscape
+
+```{r}
+## Based on chagpt conversion from minpolygonplot in homerange.m
+
+MinPolygon <- function(m, perc = 1, method = MinPolygonPerc) {
+  method(m, perc)
+}
+
+MinPolygonPerc <- function(m, perc = 1) {
+
+  n <- nrow(m)
+  if (n == 0) return(m)
+
+  ## DiscretizeCoords: grid cell centers (rounded)
+  m0 <- cbind(round(m[,1]), round(m[,2]))
+
+  ## Tally frequencies
+  key <- paste(m0[,1], m0[,2], sep = "_")
+  freq <- table(key)
+  freq_df <- data.frame(
+    cell = names(freq),
+    freq = as.integer(freq),
+    stringsAsFactors = FALSE
+  )
+
+  ## Recover coordinates
+  coords <- do.call(rbind, strsplit(freq_df$cell, "_"))
+  coords <- cbind(as.numeric(coords[,1]), as.numeric(coords[,2]))
+
+  freq_df$x <- coords[,1]
+  freq_df$y <- coords[,2]
+
+  ## Sort ascending by frequency
+  freq_df <- freq_df[order(freq_df$freq), ]
+
+  ## CDF
+  csums <- cumsum(freq_df$freq) / n
+
+  idx <- which(csums <= 1 - perc)
+
+  if (length(idx) == 0) {
+    lpoints <- as.matrix(freq_df[, c("x","y")])
+  } else {
+    cp1 <- max(idx)
+    freqcp <- freq_df$freq[cp1]
+
+    tied <- which(freq_df$freq == freqcp)
+    cp0 <- min(tied)
+    cp2 <- max(tied)
+
+    lA <- as.matrix(freq_df[tied, c("x","y")])
+    lB <- as.matrix(freq_df[-seq_len(cp2), c("x","y")])
+
+    ## Minimal area selection: approximate by including all
+    lpoints <- rbind(lA, lB)
+  }
+
+  ## Final minimum polygon = convex hull
+  if (nrow(lpoints) < 3) return(lpoints)
+
+  hull <- chull(lpoints)
+  lpoints[hull, , drop = FALSE]
+}
+
+
+MinPolygonPlot <- function(
+  m,
+  perc = 1,
+  name = "",
+  plot_style = "black",
+  show_title = FALSE
+) {
+
+  if (length(m) == 0 || nrow(m) == 0) {
+    return(list(poly = NULL, label = NULL, col = plot_style))
+  }
+
+  poly <- MinPolygon(m, perc)
+
+  ## Close polygon
+  poly <- rbind(poly, poly[1, ])
+
+  label <- ""
+  if (show_title) {
+    label <- name
+  }
+
+  list(
+    poly = poly,
+    label = label,
+    col = plot_style
+  )
+}
+
+
+## Based on chatgpt conversion from Mathmetica LandscapeAnalysis,nb
+PlotLandscape <- function(land, hrmapIn, randomcol=NULL) {
+
+  if  (is.null(randomcol))
+    randomcol = rainbow(length(hrmapIn))
+  nr <- nrow(land)
+  nc <- ncol(land)
+
+  #oldpar <- par(no.readonly = TRUE)
+  #on.exit(par(oldpar))
+
+  par(pty = "s")   # force square plotting region
+
+  plot(
+    NA,
+    xlim = c(1, nr),
+    ylim = c(1, nc),
+    asp = 1,
+    xlab = "",
+    ylab = "",
+    frame.plot = TRUE,
+    axes = FALSE
+  )
+
+  image(
+    x = seq_len(nr),
+    y = seq_len(nc),
+    z = t(land),
+    col = gray.colors(100, start = 1, end = 0),
+    add = TRUE
+  )
+
+  box()
+
+  for (i in seq_along(hrmapIn)) {
+
+    mp <- MinPolygonPlot(
+      m = hrmapIn[[i]],
+      plot_style = randomcol[i]
+    )
+
+    if (!is.null(mp$poly)) {
+      lines(
+        mp$poly[,2],
+        mp$poly[,1],
+        col = mp$col,
+        lwd = 2
+      )
+    }
+  }
+}
+
+
+
+```
+
+# Simulations
+
+## Small home-range
 
 ```{r}
 land2 = generate_fractal_landscape(0.2, .01,20)
@@ -48,7 +331,7 @@ indmodel(land_r=land2, param = list(
   dir_name = "Res_indmodel", file_name = "small"))
 ```
 
-Large home-range size fragmented.
+## Large home-range fragmented.
 
 ```{r}
 landfrag = generate_fractal_landscape(0.2, .01,160)
@@ -61,7 +344,10 @@ indmodel(land_r=landfrag, param = list(
   plotYN = "TRUE", writeYN = "TRUE", 
   dir_name = "Res_indmodel", file_name = "large_fragmented"))
 ```
-Large home-range size unfragmented (K=400).
+
+## Large home-range size unfragmented 
+
+Note that K=400.
 
 ```{r}
 land2 = generate_fractal_landscape(0.2, .99,160)
@@ -74,7 +360,8 @@ indmodel(land_r=land2, param = list(
   plotYN = "TRUE", writeYN = "TRUE", 
   dir_name = "Res_indmodel", file_name = "large_unfrag"))
 ```
-Large home-range size random (K=400).
+
+## Large home-range random
 
 ```{r}
 land2 = matrix(runif(160*160),160,160);
@@ -89,7 +376,7 @@ indmodel(land_r=land2, param = list(
   dir_name = "Res_indmodel", file_name = "large_random"))
 ```
 
-Mechanistic home-range size unfragmented.
+## Mechanistic home-range unfragmented.
 
 ```{r}
 land2 = generate_fractal_landscape(.2, .99,160)
@@ -102,7 +389,32 @@ indmodel(land_r=land2, param = list(
   plotYN = "TRUE", writeYN = "TRUE", 
   dir_name = "Res_indmodel", file_name = "mechanistic_unfrag"))
 ```
-Mechanistic home-range size fragmented. 
+
+Read the output
+```{r}
+out = import_mathematica("Res_indmodel/mechanistic_unfrag_1")
+out$simoptions
+dim(out$landscape)
+out$popsize
+head(out$ageshist)
+out$hrmaphist[[1]][[2]]
+sapply(out$hrmaphist[[1]],dim)[1,]
+sapply(out$hrmaphist[[31]],dim)[1,]
+```
+Plot population size and home-ranges
+```{r}
+plot(out$popsize, col = gray(0.5), pch = 16, xlab="Time", ylab="Population size")
+```
+
+```{r, fig.width=12, fig.height=4}
+par(mfrow = c(1, 3), mar = c(2, 2, 2, 1))
+PlotLandscape(out$landscape,out$hrmaphist[[1]])
+PlotLandscape(out$landscape,out$hrmaphist[[16]])
+PlotLandscape(out$landscape,out$hrmaphist[[31]])
+```
+
+## Mechanistic home-range size fragmented.
+
 ```{r}
   indmodel(land_r=landfrag, param = list(
   n_rep = 40, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
@@ -112,7 +424,15 @@ Mechanistic home-range size fragmented.
   plotYN = "TRUE", writeYN = "TRUE", 
   dir_name = "Res_indmodel", file_name = "mechanistic_fragmented"))
 ```
-Mechanistic home-range size random 
+
+```{r}
+out2 = import_mathematica("Res_indmodel/mechanistic_fragmented_27")
+plot(out2$popsize, col = gray(0.5), pch = 16, xlab="Time", ylab="Population size",type="l")
+PlotLandscape( out2$landscape,out2$hrmaphist[[1]])
+```
+
+## Mechanistic home-range size random
+
 ```{r}
   land2 = matrix(runif(160*160),160,160);
   land2 = ConvertToLandscape(land2,.2)
@@ -122,16 +442,171 @@ Mechanistic home-range size random
   distance_weight = 0.001, dispersal_distance = 0, dispersal_mode =0 ,
   sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
   plotYN = "TRUE", writeYN = "FALSE"))
-``` 
+```
 
-Mechanistic home-range size fragmented. 10% good habitat
+## Mechanistic home-range size fragmented. 10% good habitat
+
 ```{r}
 land2 = generate_fractal_landscape(0.1, .01,160)
 image(land2, asp=1)
 indmodel(land_r=land2, param = list(
-  n_rep = 2, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
+  n_rep = 40, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
   hr_size = 0, birth_rate = 2.0, breeding_age = 1, survival = 0.4, 
   distance_weight = 0.001, dispersal_distance = 0, dispersal_mode =0 ,
   sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
   plotYN = "TRUE", writeYN = "NO"))
 ```
+
+# Figures
+## Appendix C
+Figure C.1
+```{r}
+pdf("figures/fig_C1.pdf", width = 12, height = 8)
+par(mfrow = c(2, 3), mar = c(2, 2, 2, 1))
+PlotLandscape(out$landscape,out$hrmaphist[[1]])
+PlotLandscape(out$landscape,out$hrmaphist[[16]])
+PlotLandscape(out$landscape,out$hrmaphist[[31]])
+PlotLandscape(out2$landscape,out2$hrmaphist[[1]])
+PlotLandscape(out2$landscape,out$hrmaphist[[16]])
+PlotLandscape(out2$landscape,out$hrmaphist[[31]])
+dev.off()
+```
+Figure C.2
+```{r}
+pdf("figures/fig_C2.pdf", width = 8, height = 6)
+plot(out$popsize, type="l", ylim=c(0,160),
+     xlab="Time", ylab="Population size")
+lines(out2$popsize,lty = 2)
+dev.off()
+```
+
+Figure C.3
+```{r}
+library(future)
+library(future.apply)
+parallel::detectCores()
+plan(multisession, workers = 10)
+```
+
+```{r}
+nsteps=60
+nrep=10
+goodhab=seq(.999,0.01,-.05)
+goodhab=c(goodhab,0.001)
+popmatfrag=array(dim=c(length(goodhab),nrep,nsteps+1))
+popmatunfrag=array(dim=c(length(goodhab),nrep,nsteps+1))
+popmatrand=array(dim=c(length(goodhab),nrep,nsteps+1))
+param_model=list(
+      n_rep = 1, hab_aff = c(1.0, 0.1), n_steps = 60, init_population = 10,
+      hr_size = 0, birth_rate = 2.0, breeding_age = 1, survival = 0.4,
+      distance_weight = 0.001, dispersal_distance = 0, dispersal_mode =0,
+      sink_avoidance = 0, neigh_avoidance = 0, sink_mortality = 0, 
+      plotYN = "FALSE", writeYN = "FALSE")
+
+run_one_i <- function(i) {
+ capture.output({
+  frag   <- matrix(NA, length(goodhab), nsteps + 1)
+  unfrag <- matrix(NA, length(goodhab), nsteps + 1)
+  rand   <- matrix(NA, length(goodhab), nsteps + 1)
+  for (p in 1:length(goodhab))
+    {
+    land = generate_fractal_landscape(goodhab[p], .99,160)
+    out=indmodel(land_r=land, param = param_model)
+    frag[p, ] <- out$popsize_av_time_step
+    
+    land = generate_fractal_landscape(goodhab[p], .01,160)
+    out=indmodel(land_r=land, param = param_model)
+    unfrag[p, ] <- out$popsize_av_time_step
+    
+    land = matrix(runif(160*160),160,160);
+    land = ConvertToLandscape(land,goodhab[p])
+    out=indmodel(land_r=land, param = param_model)
+    rand[p, ] <- out$popsize_av_time_step
+  }
+ }, file = NULL)
+list(
+    i = i,
+    frag   = frag,
+    unfrag = unfrag,
+    rand   = rand)  
+}
+
+results <- future_lapply(
+  seq_len(nrep),
+  run_one_i,
+  future.seed = TRUE
+)
+
+for (res in results) {
+  popmatfrag[,res$i,]   <- res$frag
+  popmatunfrag[,res$i,] <- res$unfrag
+  popmatrand[,res$i,]   <- res$rand
+}
+
+save(popmatfrag,popmatunfrag,popmatrand,file="figurec3")
+```
+
+Plots
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+time_window <- 51:61
+P <- dim(popmatfrag)[1]
+nrep <- dim(popmatfrag)[2]
+
+# Helper function to summarize an array
+summarize_array <- function(arr, label) {
+  df <- as.data.frame.table(arr)  # gives Var1, Var2, Var3, Freq
+  colnames(df) <- c("p", "i", "t", "popsize")
+  df$p <- goodhab#as.numeric(df$p)
+  df$i <- as.numeric(df$i)
+  df$t <- as.numeric(df$t)
+  
+  df %>%
+    filter(t %in% time_window) %>%
+    group_by(p, i) %>%
+    summarize(mean_time = mean(popsize)/4, .groups = "drop") %>%
+    group_by(p) %>%
+    summarize(
+      mean_pop = mean(mean_time),
+      q25 = quantile(mean_time, 0.25),
+      q75 = quantile(mean_time, 0.75),
+      .groups = "drop"
+    ) %>%
+    mutate(type = label)
+}
+
+# Summarize all three
+df_frag   <- summarize_array(popmatfrag,   "frag")
+df_unfrag <- summarize_array(popmatunfrag, "unfrag")
+df_rand   <- summarize_array(popmatrand,   "rand")
+
+# Combine into one dataframe
+df_plot <- bind_rows(df_frag, df_unfrag, df_rand)
+
+myplot=
+  ggplot(df_plot, aes(x = p, y = mean_pop, linetype = type, group = type)) +
+  geom_line(size = 1) +
+  geom_point(aes(shape = type), size = 2) +
+  geom_errorbar(aes(ymin = q25, ymax = q75), width = 0.2) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"), name=NULL) +
+  scale_shape_manual(values = c(16, 17, 15),name = NULL) +  #symbols
+  labs(
+    x = "Habitat loss",
+    y = "Realized carrying capacity (%)",
+    linetype = "Landscape type",
+    shape = "Landscape type"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top")
+myplot
+# Save as PDF
+ggsave("figures/fig_C3.pdf", plot = myplot, width = 7, height = 5)  
+```
+
+
+
+
