@@ -345,7 +345,7 @@ indmodel(land_r=landfrag, param = list(
   dir_name = "Res_indmodel", file_name = "large_fragmented"))
 ```
 
-## Large home-range size unfragmented 
+## Large home-range unfragmented 
 
 Note that K=400.
 
@@ -490,7 +490,7 @@ plan(multisession, workers = 10)
 
 ```{r}
 nsteps=60
-nrep=10
+nrep=40
 goodhab=seq(.999,0.01,-.05)
 goodhab=c(goodhab,0.001)
 popmatfrag=array(dim=c(length(goodhab),nrep,nsteps+1))
@@ -510,11 +510,11 @@ run_one_i <- function(i) {
   rand   <- matrix(NA, length(goodhab), nsteps + 1)
   for (p in 1:length(goodhab))
     {
-    land = generate_fractal_landscape(goodhab[p], .99,160)
+    land = generate_fractal_landscape(goodhab[p], .01,160)
     out=indmodel(land_r=land, param = param_model)
     frag[p, ] <- out$popsize_av_time_step
     
-    land = generate_fractal_landscape(goodhab[p], .01,160)
+    land = generate_fractal_landscape(goodhab[p], .99,160)
     out=indmodel(land_r=land, param = param_model)
     unfrag[p, ] <- out$popsize_av_time_step
     
@@ -543,7 +543,7 @@ for (res in results) {
   popmatrand[,res$i,]   <- res$rand
 }
 
-save(popmatfrag,popmatunfrag,popmatrand,file="figurec3")
+save(popmatfrag,popmatunfrag,popmatrand,file="Res_indmodel/figurec3.RData")
 ```
 
 Plots
@@ -560,7 +560,7 @@ nrep <- dim(popmatfrag)[2]
 summarize_array <- function(arr, label) {
   df <- as.data.frame.table(arr)  # gives Var1, Var2, Var3, Freq
   colnames(df) <- c("p", "i", "t", "popsize")
-  df$p <- goodhab#as.numeric(df$p)
+  df$p <- as.numeric(df$p)
   df$i <- as.numeric(df$i)
   df$t <- as.numeric(df$t)
   
@@ -586,15 +586,19 @@ df_rand   <- summarize_array(popmatrand,   "rand")
 # Combine into one dataframe
 df_plot <- bind_rows(df_frag, df_unfrag, df_rand)
 
+# Replace the p indices with actual habitat values
+df_plot <- df_plot %>%
+  mutate(p = ((1- goodhab[p])*100))
+
 myplot=
   ggplot(df_plot, aes(x = p, y = mean_pop, linetype = type, group = type)) +
   geom_line(size = 1) +
   geom_point(aes(shape = type), size = 2) +
   geom_errorbar(aes(ymin = q25, ymax = q75), width = 0.2) +
-  scale_linetype_manual(values = c("solid", "dashed", "dotted"), name=NULL) +
+  scale_linetype_manual(values = c("dotted","dashed","solid"), name=NULL) +
   scale_shape_manual(values = c(16, 17, 15),name = NULL) +  #symbols
   labs(
-    x = "Habitat loss",
+    x = "Habitat loss (%)",
     y = "Realized carrying capacity (%)",
     linetype = "Landscape type",
     shape = "Landscape type"
@@ -605,6 +609,11 @@ myplot=
 myplot
 # Save as PDF
 ggsave("figures/fig_C3.pdf", plot = myplot, width = 7, height = 5)  
+```
+```{r}
+popmatrand[20,,61]
+popmatunfrag[20,,61]
+popmatfrag[20,,61]
 ```
 
 
