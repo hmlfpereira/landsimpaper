@@ -26,7 +26,7 @@ Install the package PopIn.
 #C++ code in PopIn was pre c++11 and followed the c++98 standard
 #Have now updated it to compile with features that are deprecated in clang
 
-remotes::install_github("anaceiahasse/PopIn", ref="paper_resubmission")
+remotes::install_github("anaceiahasse/PopIn")
 
 
 #instal from local repo
