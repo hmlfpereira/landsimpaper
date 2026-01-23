@@ -461,14 +461,16 @@ indmodel(land_r=land2, param = list(
 ## Appendix C
 Figure C.1
 ```{r}
+out = import_mathematica("Res_indmodel/mechanistic_unfrag_1")
+out2 = import_mathematica("Res_indmodel/mechanistic_fragmented_15")
 pdf("figures/fig_C1.pdf", width = 12, height = 8)
 par(mfrow = c(2, 3), mar = c(2, 2, 2, 1))
 PlotLandscape(out$landscape,out$hrmaphist[[1]])
 PlotLandscape(out$landscape,out$hrmaphist[[16]])
 PlotLandscape(out$landscape,out$hrmaphist[[31]])
 PlotLandscape(out2$landscape,out2$hrmaphist[[1]])
-PlotLandscape(out2$landscape,out$hrmaphist[[16]])
-PlotLandscape(out2$landscape,out$hrmaphist[[31]])
+PlotLandscape(out2$landscape,out2$hrmaphist[[16]])
+PlotLandscape(out2$landscape,out2$hrmaphist[[31]])
 dev.off()
 ```
 Figure C.2
