@@ -2,7 +2,7 @@
 
 This repository contains the code and data used to produce the figures and results in the paper:
 
-> Pereira, H.M., Daily, G.C., and Hasse, A.C. (in review) The carrying capacity of a fragmented landscape depends on the home-range size of a species
+> Pereira, H.M., Daily, G.C., and Hasse, A.C. (2026) The carrying capacity of a fragmented landscape depends on the home-range size of a species. *Advances in Ecological Research*.
 
 ## Dependencies
 
